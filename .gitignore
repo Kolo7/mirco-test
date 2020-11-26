@@ -1,0 +1,6 @@
+*.exe
+*.yaml
+go.sum
+.idea/
+playground/
+vendor/
