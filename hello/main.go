@@ -11,9 +11,15 @@ import (
 
 func main() {
 	// New Service
+	/*cert, err := tls.LoadX509KeyPair("server.pem", "server.key")
+	if err != nil {
+		return
+	}
+	config := &tls.Config{Certificates: []tls.Certificate{cert}}*/
 	service := micro.NewService(
 		micro.Name("com.foo.service.hello"),
 		micro.Version("latest"),
+		//micro.Server(server.NewServer(server.TLSConfig(config))),
 	)
 
 	// Initialise service
