@@ -142,11 +142,9 @@ func init() {
 
 ## grpcServer的实现
 
-前面的分析只是将Transport替换成了http方式，实际上也是合理的设计，不过这里再对grpc来次全新的分析。
+前面的分析的Transport是走了http方式，实际上也是server并不是http而是grpc，而grpc的server默认的Transport是什么，这里再对grpc来次全新的分析。
 
 ### 额外的Option
-
-grpcServer实现了Server接口，在原Options的基础上，多了一些参数，而这些多出来的参数并不是采用组合或者是继承的方式加上去，而是作为额外option，保存到server.Options.Context当中。
 
 ```go
 // server/options.go
@@ -173,3 +171,73 @@ func Codec(contentType string, c encoding.Codec) server.Option {
     }
 }
 ```
+
+grpcServer实现了Server接口，在原Options的基础上，多了一些参数，而这些多出来的参数并不是采用组合或者是继承的方式加上去，而是作为额外option，保存到server.Options.Context当中。
+
+### grpcServer默认Transport
+
+```go
+// server/grpc/options.go
+func newOptions(opt ...server.Option) server.Options {
+	opts := server.Options{
+        ...
+        Transport: transport.DefaultTransport,
+        ...
+    }
+}
+
+```
+
+可以看到依然是httpTransport，但奇怪的是：
+```go
+// server/grpc/grpc.go
+func Start() error {
+    ...
+    // micro: config.Transport.Listen(config.Address)
+    var ts net.Listener
+
+    if l := g.getListener(); l != nil {
+    	ts = l
+    } else {
+    	var err error
+
+    	// check the tls config for secure connect
+    	if tc := config.TLSConfig; tc != nil {
+    		ts, err = tls.Listen("tcp", config.Address, tc)
+    		// otherwise just plain tcp listener
+    	} else {
+    		ts, err = net.Listen("tcp", config.Address)
+    	}
+    	if err != nil {
+    		return err
+    	}
+    }
+    ...
+}
+
+```
+因此，所谓的grpcServer，Transport似乎是一个http，并且它还没有调用transport.Listen方法，看起来是那么的不自然。然后我在作者的文档里找到了回答：
+[GRPC Support](https://github.com/micro/micro/blob/master/docs/v2/design/framework/grpc.md)
+
+这一切是因为GRPC框架紧密的耦合了自己的传输协议，go micro框架没法单独抽离出grpcTransoport。
+
+### 应用层连接
+
+前面不管是普通的rpc还是grpc，第一步建立起来监听都是tcp连接。由于micro事无巨细的设计，整个http连接的细节都暴露出来。
+
+
+```go
+// server/rpc_server.go
+func (s *rpcServer) Start() error {
+    ...
+    go func() {
+        for {
+            // listen for connections
+            err := ts.Accept(s.ServeConn)
+        }
+    }
+    ...
+}
+```
+
+这里调用了transport.Accept()，传入了一个s.ServeConn方法，该方法接受一个Socket参数，很明显，rpcServer在这里从这里注入了
