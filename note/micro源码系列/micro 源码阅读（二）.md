@@ -240,4 +240,27 @@ func (s *rpcServer) Start() error {
 }
 ```
 
-这里调用了transport.Accept()，传入了一个s.ServeConn方法，该方法接受一个Socket参数，很明显，rpcServer在这里从这里注入了
+这里调用了transport.Accept()，在这个方法中就是从http连接中获取我们想要的。
+
+```go
+func (h *httpTransportListener) Accept(fn func(Socket)) error {
+    mux := http.NewServeMux()
+    ...
+	// register our transport handler
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        // execute the socket
+		fn(sock)
+	})
+    ...
+    srv := &http.Server{
+		Handler: mux,
+    }
+
+    return srv.Serve(h.listener)
+}
+
+```
+
+micro与http的关系在这里梳理清楚了，micro创建一个http.Server，设置了全新的多路复用器，而这个复用器加入了一个handler，在这handler中，注入了micro自己的处理器，也就是从这里拿到了http中包括requset、ResponseWriter、一个读取body的buifo.ReadWriter。
+
+
